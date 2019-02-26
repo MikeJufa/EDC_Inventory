@@ -1,0 +1,400 @@
+SET Version = 'Version 1.0.9';
+//SET ERRORMODE = 2;
+
+//SET Environment specific variable.
+//Load Environment specific variable from external script.
+$(must_inlcude=config.qvs);
+
+//Set Target location and file name.
+LET vTgtPath='..\Data\';
+
+SET HidePrefix='_';
+
+///$tab Inline
+TRACE;
+TRACE Loading Select Period Inline Table;
+TRACE ==================================;
+
+SelectPeriod:
+LOAD * Inline
+[
+StartDate; StopDate; Select Period
+num(floor(today()-8)); num(floor(today())); Rolling 7d
+num(floor(today()-15)); num(floor(today())); Rolling 14d
+num(floor(today()-31)); num(floor(today())); Rolling 30d
+num(floor(today()-181)); num(floor(today())); Rolling 6m
+num(floor(WeekStart(today()))); num(floor(WeekEnd(today()))); Current Week
+num(floor(WeekStart(today()-7))); num(floor(WeekEnd(today()-7))); Previous Week
+num(floor(MonthStart(addmonths(today(),-1)))); num(floor(MonthEnd(addmonths(today(),-1)))); Previous Month
+num(floor(quarterstart(today(),-1))); num(floor(quarterend(today(),-1))); Previous Quarter
+num(floor(yearstart(today(),-1))); num(floor(yearend(today(),-1))); Previous Year
+num(floor(yearstart(today()))); num(floor(today())); Current YTD
+num(floor(MonthStart(addmonths(today(),-13)))); num(floor(today())); Previous 13m
+num(floor(MonthStart(addmonths(today(),-24)))); num(floor(today())); Previous 2 yrs
+num(floor(MonthStart(addmonths(today(),-36)))); num(floor(today())); Previous 3 yrs
+num(floor(MonthStart(addmonths(today(),-48)))); num(floor(today())); Previous 4 yrs
+num(floor(MonthStart(addmonths(today(),-60)))); num(floor(today())); Previous 5 yrs
+](delimiter is ';')
+;
+
+///$tab Sub
+//==============================================================================
+// Subroutine to Generate Calendar
+//==============================================================================
+
+SUB CalendarFromField(_field, _calendar, _prefix)
+[$(_calendar)]:
+//Generate Final Calendar
+Load
+            [$(_field)]
+    ,Year([$(_field)]) as [$(_prefix)Year]
+    ,'Q'&Ceil(Month([$(_field)])/3) as [$(_prefix)Quarter]
+    ,Month([$(_field)]) as [$(_prefix)Month]
+    ,Date(MonthStart([$(_field)]),'MMM-YY') as [$(_prefix)YearMonth]
+    ,Date(MonthStart([$(_field)]),'YYYYMM') as [$(_prefix)YearMonthNum]
+    ,Week([$(_field)]) as [$(_prefix)Week]
+    ,WeekDay([$(_field)]) as [$(_prefix)WeekDay]
+    ,Day([$(_field)]) as [$(_prefix)Day]
+    ,WeekStart([$(_field)]) as [$(_prefix)WeekOf]
+    ,if(DayNumberOfYear([$(_field)])<=DayNumberOfYear(Today()), 1, 0) as [$(_prefix)IsInYTD]
+    ,if(Day([$(_field)])<=Day(Today()), 1, 0) as [$(_prefix)IsInMTD]
+;
+//Generate a range of dates between min and max dates.
+Load
+     Date(DateMin + IterNo()) as [$(_field)]                       //Link Field
+While DateMin + IterNo() <= DateMax
+;
+//Find min and max of date of field values.
+Load
+     Min(datefield)-1 as DateMin
+    ,Max(datefield) as DateMax
+;
+//Load date field values.
+Load
+     FieldValue('$(_field)', RecNo()) as datefield
+AutoGenerate FieldValueCount('$(_field)');
+
+END SUB
+
+
+///$tab MappingTable
+Map_ME:
+Mapping LOAD * Inline
+[
+A1, A2
+'UPS', 'M&E'
+'PDU', 'M&E'
+'RDP', 'M&E'
+'GENERATOR', 'M&E'
+'INROOM', 'M&E'
+]
+;
+
+Map_NoName:
+Mapping Load * Inline
+[
+B1, B2
+???, <N/A>
+N, <N/A>
+N/A, <N/A>
+NA, <N/A>
+NONE, <N/A>
+TBA, <N/A>
+TBD, <N/A>
+UNKNIOWN, <N/A>
+UNKNONW, <N/A>
+UNKNOW, <N/A>
+UNKNOWN, <N/A>
+UNKNOMN, <N/A>
+UNKONW, <N/A>
+UNKNON, <N/A>
+UNKNOEWN, <N/A>
+UNKOIWN, <N/A>
+NULL, <N/A>
+NOT AVAILABLE, <N/A>
+NOT LABELLED WITH HOST NAME, <N/A>
+<UNTITLED>, <N/A>
+-, <N/A>
+\, <N/A>
+CROOKE CLEAN UP, <N/A>
+]
+;
+
+///$tab Connection
+TRACE;
+TRACE mdr_dco_power_chain;
+TRACE ===================;
+
+mdr_dco_power_chain:
+Load
+     if(len(ups)>0, Upper(ups), '<N/A>') as UPS
+    ,ups_id as UPS_ID
+    ,if(len(pdu)>0, Upper(pdu), '<N/A>') as PDU
+    ,pdu_id as PDU_ID
+    ,if(len(rpp)>0, Upper(rpp), '<N/A>') as RPP
+    ,rpp_id as RPP_ID
+    ,upstream_rpp_breaker_label as UPSTREAM_RPP_BREAKER
+    ,upstream_rpp_breaker_panel_label as UPSTREAM_RPP_PANEL
+    ,power_strip as POWER_STRIP
+    ,breaker as BREAKER
+    ,panel as PANEL
+    ,single_corded_flag as SINGLE_CORDED_FLAG
+    ,ci_id
+    ,1 as _powerChainDeviceCounter
+    ,if(single_sourced_flag=1,'Y','N') as SINGLE_SOURCED_FLAG
+    ,outside_rack_power_supply_1 as _outside_rack_power_supply_1
+    ,outside_rack_power_supply_2 as _outside_rack_power_supply_2
+    ,outside_rack_power_supply_3 as _outside_rack_power_supply_3
+    ,outside_rack_power_supply_4 as _outside_rack_power_supply_4
+    ,outside_rack_power_supply_5 as _outside_rack_power_supply_5
+    ,outside_rack_power_supply_6 as _outside_rack_power_supply_6
+;
+LOAD
+     region
+    ,building
+    ,floor
+    ,room
+    ,isolation_domain
+    ,rack_name
+    ,ups
+    ,ups_id
+    ,pdu
+    ,pdu_id
+    ,upstream_rpp_breaker_label
+    ,upstream_panel_circuit_number
+    ,upstream_rpp_breaker_size
+    ,upstream_rpp_breaker_poles
+    ,upstream_rpp_breaker_power_phase
+    ,upstream_rpp_breaker_rating
+    ,upstream_rpp_breaker_panel_label
+    ,rpp
+    ,rpp_id
+    ,breaker
+    ,circuit_number
+    ,breaker_size
+    ,breaker_poles
+    ,power_phase
+    ,breaker_rating
+    ,panel
+    ,power_strip
+    ,receptacle
+    ,device_name
+    ,ci_id
+    ,single_corded_flag
+    ,asset_class
+    ,single_sourced_flag
+    ,outside_rack_power_supply_1
+    ,outside_rack_power_supply_2
+    ,outside_rack_power_supply_3
+    ,outside_rack_power_supply_4
+    ,outside_rack_power_supply_5
+    ,outside_rack_power_supply_6
+FROM
+[..\Data\mdr_dco_power_chain.qvd](qvd)
+;
+
+///$tab DCO Devices
+TRACE;
+TRACE Loading mdr_dco_devices;
+TRACE =======================;
+
+mdr_dco_devices:
+LOAD
+    *
+    ,if([Install Date]='<N/A>', '<N/A>', Year([Install Date])) as Year
+    ,if([Install Date]='<N/A>', '<N/A>', Month([Install Date])) as Month
+    ,if([Install Date]='<N/A>', '<N/A>', Week([Install Date])) as Week
+    ,if([Install Date]='<N/A>', '<N/A>', Date(WeekStart([Install Date]),'M/D/YYYY')) as WeekOf
+    ,if([Install Date]='<N/A>', '<N/A>', Date(MonthStart([Insatll Date]),'MMM YYYY')) as YearMonth
+    ,if([Install Date]='<N/A>', '<N/A>', Day([Install Date])) as Day
+    ,if(DayNumberOfYear([Install Date])<=DayNumberOfYear(Today()), 1, 0) as [_IsInYTD]
+    ,if(Day([Install Date])<=Day(Today()), 1, 0) as [_IsInMTD]
+    ,ApplyMap('Map_ME', [Device Type], 'White Space') as [Device Group]
+    ,Manufacturer&'|'&[Model Name]&'|'&[Part Number] as _Genome
+    ,ApplyMap('Map_NoName', if(len(device_name2)>0, Upper(device_name2), '<N/A>'), if(len(device_name2)>0, Upper(device_name2), '<N/A>')) as [Device Name]
+;
+LOAD
+     ci_id
+//    ,if(len(SubField(ci_location,'/',-2))>0, SubField(ci_location,'/',-2), '<N/A>') as Region
+    ,if(len(region)>0, Upper(region), '<N/A>') as Region
+    ,if(len(country)>0, Upper(country), '<N/A>') as Country
+    ,if(len(building)>0, Upper(building), '<N/A>') as Building
+    ,if(len(room_type)>0, Upper(room_type), '<N/A>') as [Room Type]
+    ,if(len(room)>0, Upper(room), '<N/A>') as CommStoreRoom
+    ,if(len(install_date)>0, date(floor(install_date),'M/D/YYYY') as [Install Date]
+    ,if(len(num(install_date))>0, num(floor(install_date)), 0) as InsatllDateNum
+    ,replace(if(len(device_name)>0, Upper(device_name), '<N/A>'), '[NULL]', '<N/A>') as device_name2
+    ,if(len(device_type)>0, Upper(device_type), '<N/A>') as [Device Type]
+    ,if(len(manufacturer)>0, Upper(manufacturer), '<N/A>') as Manufacturer
+    ,ApplyMap('Map_NoName', if(len(barcode_number)>0, Upper(barcode_number), '<N/A>'), if(len(barcode_number)>0, Upper(barcode_number), '<N/A>')) as [Barcode Number]
+    ,ApplyMap('Map_NoName', if(len(serial_number)>0, Upper(serial_number), '<N/A>'), if(len(serial_number)>0, Upper(serial_number), '<N/A>')) as [Serial Number]
+    ,ApplyMap('Map_NoName', if(len(model)>0, Upper(model), '<N/A>'), if(len(model)>0, Upper(model), '<N/A>')) as [Model Name]
+    ,ApplyMap('Map_NoName', if(len(part_number)>0, Upper(part_number), '<N/A>'), if(len(part_number)>0, Upper(part_number), '<N/A>')) as [Part Number]
+    ,if(len(mount_type)>0, Upper(mount_type), '<N/A>') as [Mount Type]
+    ,if(len(ci_location)>0, Upper(ci_location), '<N/A>') as location
+    ,if(len(install_status)>0, Upper(install_status), '<N/A>') as [Install Status]
+    ,ApplyMap('Map_NoName', if(len(row)>0, Upper(row), '<N/A>'), if(len(row)>0, Upper(row), '<N/A>')) as [Row Name]
+    ,if(len(rack_name)>0, Upper(rack_name), '<N/A>') as [Rack Name]
+    ,if(len(rack_mount_side)>0, Upper(rack_mount_side), '<N/A>') as [Rack Mount Side]
+    ,if(len(asset_class)>0, Upper(asset_class), '<N/A>') as [Asset Class]
+    ,ApplyMap('Map_NoName', if(len(isolation_domain)>0, Upper(isolation_domain), '<N/A>'), if(len(isolation_domain)>0, Upper(isolation_domain), '<N/A>')) as [Isolation Domain]
+    ,if(len(rack_reservation)>0, Upper(rack_reservation), '<N/A>') as [Rack Reservation]
+    ,if(len(rack_function)>0, Upper(rack_function), '<N/A>') as [Rack Function]
+    ,if(len(rack_status)>0, Upper(rack_status), '<N/A>') as [Rack_Status]
+    ,if(len(nameplate)>0, Upper(nameplate), '<N/A>') as [NamePlate]
+    ,if(len(adj_nameplate)>0, Upper(adj_nameplate), '<N/A>') as [AdjNamePlate]
+;
+LOAD
+     alignment
+    ,asset_class
+    ,barcode_number
+    ,bottom_rack_unit
+    ,space_id
+    ,region
+    ,country
+    ,building
+    ,room
+    ,row
+    ,rack_name
+    ,device_name
+    ,device_type
+    ,floor
+    ,height_units
+    ,install_status
+    ,install_date
+    ,isolation_domain
+    ,location
+    ,manufacturer
+    ,model
+    ,part_number
+    ,mount_type
+    ,offset_x
+    ,offset_y
+    ,ci_parent_id
+    ,parent_device_name
+    ,op_volts
+    ,power_factor
+    ,psupply_n
+    ,num_cords
+    ,receptacle_type
+    ,rack_mount_type
+    ,rack_function
+    ,rack_reservation
+    ,status
+    ,rack_units
+    ,rack_id
+    ,rack_height
+    ,room_type
+    ,rotation
+    ,serial_number
+    ,room_label
+    ,space_unique_id
+    ,top_rack_unit
+    ,use_status
+    ,ci_id
+    ,nameplate
+    ,adj_nameplate
+    ,slot
+    ,ci_location
+FROM
+[..\Data\mdr_dco_devices.qvd](qvd)
+where Upper(device_type) <> 'SERVERROOM'
+and Upper(device_type) <> 'STORAGE'
+and Upper(device_type) <> 'FOLDER'
+and Upper(device_type) <> 'PERFORATEDFLOORTILE'
+;
+
+CommRooms:
+LOAD distinct
+    ci_id
+    ,if(len(room)>0, Upper(room), '<N/A>') as CommRoom
+FROM
+[..\Data\mdr_dco_devices.qvd](qvd)
+where Upper(room_type) = 'COMM ROOMS'
+;
+
+StoreRooms:
+LOAD distinct
+    ci_id
+    ,if(len(room)>0, Upper(room), '<N/A>') as StoreRoom
+FROM
+[..\Data\mdr_dco_devices.qvd](qvd)
+where Upper(room_type) = 'STORE ROOMS'
+;
+
+StoreRoomDetails:
+LOAD
+    *
+    ,1 as _StoreRoomDeviceCounter
+    ,if([Delivery Date]='<N/A>', '<N/A>', Year([Delivery Date])) as delivery.Year
+    ,if([Delivery Date]='<N/A>', '<N/A>', Month([Delivery Date])) as delivery.Month
+    ,if([Delivery Date]='<N/A>', '<N/A>', Day([Delivery Date])) as delivery.Day
+    ,if([Delivery Date]='<N/A>', '<N/A>', Date(MonthStart([Delivery Date]), 'MMM YYYY') as delivery.YearMonth
+    ,ApplyMap('Map_NoName', if(len(PARENT_SERIAL_NUMBER2)>0, Upper(PARENT_SERIAL_NUMBER2), '<N/A>'), if(len(PARENT_SERIAL_NUMBER2)>0, Upper(PARENT_SERIAL_NUMBER2), '<N/A>')) as [Parent Serial Number]
+    ,ApplyMap('Map_NoName', if(len(PROJECT2)>0, Upper(PROJECT2), '<N/A>'), if(len(PROJECT2)>0, Upper(PROJECT2), '<N/A>')) as Project
+    ,ApplyMap('Map_NoName', if(len(JOB_TICKET2)>0, Upper(JOB_TICKET2), '<N/A>'), if(len(JOB_TICKET2)>0, Upper(JOB_TICKET2), '<N/A>')) as [Job Ticket]
+    ,ApplyMap('Map_NoName', if(len(TRACKING_NUMBER2)>0, Upper(TRACKING_NUMBER2), '<N/A>'), if(len(TRACKING_NUMBER2)>0, Upper(TRACKING_NUMBER2), '<N/A>')) as [Tracking Number]
+    ,ApplyMap('Map_NoName', if(len(SIGNED_FOR_BY2)>0, Upper(SIGNED_FOR_BY2), '<N/A>'), if(len(SIGNED_FOR_BY2)>0, Upper(SIGNED_FOR_BY2), '<N/A>')) as [Signed For By]
+    ,ApplyMap('Map_NoName', if(len(EQUIPMENT_REMOVAL_FORM_ID2)>0, Upper(EQUIPMENT_REMOVAL_FORM_ID2), '<N/A>'), if(len(EQUIPMENT_REMOVAL_FORM_ID2)>0, Upper(EQUIPMENT_REMOVAL_FORM_ID2), '<N/A>')) as [Equipment Removal Form ID]
+    ,ApplyMap('Map_NoName', if(len(COMMENTS2)>0, Upper(COMMENTS2), '<N/A>'), if(len(COMMENTS2)>0, Upper(COMMENTS2), '<N/A>')) as Comments
+    ,ApplyMap('Map_NoName', if(len(ARIBA_UPDATED_BY2)>0, Upper(ARIBA_UPDATED_BY2), '<N/A>'), if(len(ARIBA_UPDATED_BY2)>0, Upper(ARIBA_UPDATED_BY2), '<N/A>')) as [Ariba Updated By]
+;
+LOAD
+     ci_id
+    ,ApplyMap('Map_NoName', if(len(DELIVERY_REFERENCE)>0, Upper(DELIVERY_REFERENCE), '<N/A>'), if(len(DELIVERY_REFERENCE)>0, Upper(DELIVERY_REFERENCE), '<N/A>')) as [Delivery Reference]
+    ,if(len(DELIVERY_DATE)>0, date(floor(DELIVERY_DATE), 'M/D/YYYY'), '<N/A>') as [Delivery Date]
+    ,if(len(TO_BE_DISPOSED)>0, Upper(TO_BE_DISPOSED), '<N/A>') as [To Be Disposed]
+    ,if(len(OWNER)>0, Upper(OWNER), '<N/A>') as [Owner]
+    ,replace(if(len(PARENT_SERIAL_NUMBER)>0, Upper(PARENT_SERIAL_NUMBER), '<N/A>'), '[NULL]', '<N/A>') as PARENT_SERIAL_NUMBER2
+    ,replace(if(len(PROJECT)>0, Upper(PROJECT), '<N/A>'), '[NULL]', '<N/A>') as PROJECT2
+    ,replace(if(len(JOB_TICKET)>0, Upper(JOB_TICKET), '<N/A>'), '[NULL]', '<N/A>') as JOB_TICKET2
+    ,replace(if(len(TRACKING_NUMBER)>0, Upper(TRACKING_NUMBER), '<N/A>'), '[NULL]', '<N/A>') as TRACKING_NUMBER2
+    ,replace(if(len(SIGNED_FOR_BY)>0, Upper(SIGNED_FOR_BY), '<N/A>'), '[NULL]', '<N/A>') as SIGNED_FOR_BY2
+    ,replace(if(len(EQUIPMENT_REMOVAL_FORM_ID)>0, Upper(EQUIPMENT_REMOVAL_FORM_ID), '<N/A>'), '[NULL]', '<N/A>') as EQUIPMENT_REMOVAL_FORM_ID2
+    ,if(len(SHIP_TO_LOCATION)>0, Upper(SHIP_TO_LOCATION), '<N/A>') as [Ship To Location]
+    ,if(len(DEVICE_DESCRIPTION)>0, Upper(DEVICE_DESCRIPTION), '<N/A>') as [Device Description]
+    ,replace(if(len(COMMENTS)>0, Upper(COMMENTS), '<N/A>'), '[NULL]', '<N/A>') as COMMENTS2
+    ,replace(if(len(ARIBA_UPDATED_BY)>0, Upper(ARIBA_UPDATED_BY), '<N/A>'), '[NULL]', '<N/A>') as ARIBA_UPDATED_BY2
+;
+LOAD
+     CI_ID as ci_id
+    ,REGION
+    ,COUNTRY
+    ,BUILDING
+    ,ROOM
+    ,DEVICE_TYPE
+    ,DEVICE_STATUS
+    ,MANUFACTURER
+    ,MODEL
+    ,PART_NUMBER
+    ,DELIVERY_REFERENCE
+    ,BAR_CODE
+    ,SERIAL_NUMBER
+    ,DELIVERY_DATE
+    ,INSTALL_DATE
+    ,TO_BE_DISPOSED
+    ,OWNER
+    ,PARENT_SERIAL_NUMBER
+    ,PROJECT
+    ,JOB_TICKET
+    ,TRACKING_NUMBER
+    ,ARIBA_UPDATED_BY
+    ,SIGNED_FOR_BY
+    ,SHIP_TO_LOCATION
+    ,EQUIPMENT_REMOVAL_FORM_ID
+    ,DEVICE_DESCRIPTION
+    ,COMMENTS
+FROM
+[..\Data\mdr_storeroom_details.qvd](qvd)
+;
+
+DROP fields
+     device_name2
+    ,PARENT_SERIAL_NUMBER2
+    ,PROJECT2
+    ,JOB_TICKET2
+    ,SIGNED_FOR_BY2
+    ,EQUIPMENT_REMOVAL_FORM_ID2
+    ,COMMENTS2
+    ,PARENT_SERIAL_NUMBER2
+;

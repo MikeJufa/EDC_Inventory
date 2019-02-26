@@ -1,0 +1,20 @@
+//External Configuration script for DC_Inventory.qvw
+//Mike Zhu Jan. 2019
+//$(include=config.qvs);
+//Set Environment to 'DEV' or 'QA' or 'PROD'
+
+SET vEnvironment='DEV';
+
+//Set Environment specific variables
+SWITCH vEnvironment
+CASE 'LOCAL'
+SET vSource_Env = 'dev';
+CASE 'DEV'
+SET vSource_Env = 'dev';
+CASE 'QA'
+SET vSource_Env = 'qa';
+CASE 'PROD'
+SET vSource_Env = 'prod';
+DEFAULT
+EXIT Script;
+END SWITCH
